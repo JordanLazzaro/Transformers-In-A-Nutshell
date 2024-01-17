@@ -36,7 +36,6 @@ In the transformer, this query/hash-table combo needs to be learned for the task
 Suppose our input $X$ is a collection of word embeddings in the form of $n$ row vectors of dimension $d_{model}$, where
 
 $$
-
 X=
 \begin{bmatrix}
     \text{---} & x_1 & \text{---} \\
@@ -45,8 +44,7 @@ X=
 &\vdots
 \\
     \text{---} & x_n & \text{---}
-\end{bmatrix},\ x \in \R^{d_{model}}
-
+\end{bmatrix},\ x \in \mathbb{R}^{d_{model}}
 $$
 
 We can obtain the query, key, and value vectors for each input vector in parallel by computing:
@@ -55,12 +53,11 @@ $$
 Q=XW_{Q},\ K=XW_{K},\ V=XW_{V}
 $$
 
-where  $W_{Q}\in \R^{d_{model} \times d_k},\ W_{K}\in \R^{d_{model} \times d_k}$  and $W_{V} \in \R^{d_{model} \times d_v}$. 
+where  $W_{Q}\in \mathbb{R}^{d_{model} \times d_k},\ W_{K}\in \mathbb{R}^{d_{model} \times d_k}$  and $W_{V} \in \mathbb{R}^{d_{model} \times d_v}$. 
 
 The resulting matrices take the form:
 
 $$
-
 Q=
 \begin{bmatrix}
     \text{---} & q_1 & \text{---} \\
@@ -90,7 +87,7 @@ Q=
 \end{bmatrix}
 $$
 
-where  $q \in \R^{d_k},\ k \in \R^{d_k},$ $v \in \R^{d_v}$, and $n$ is the sequence length or ***context size***.
+where  $q \in \mathbb{R}^{d_k},\ k \in \mathbb{R}^{d_k},$ $v \in \mathbb{R}^{d_v}$, and $n$ is the sequence length or ***context size***.
 
 Now, we can compute all the query-key similarity scores in parallel by representing them as $QK^T$, giving us an $n \times n$ matrix of scores, with every row corresponding to a query, and every column to a key. We can turn these scores into a probability distribution over the value vectors using the softmax function, with the constituent elements of the distribution being the attention weights. This means that the weighted sum of values becomes an expected value over the set of value vectors for the element of $X$ who’s query we used. More formally, for a given set of query, key, and value matrices, we can express this as $Attention(Q,K,V) = softmax(QK^T)V$. As clean and simple of a method as this seems for obtaining useful mixtures of value vectors, there’s a hidden issue with this process. As the size of $d_k$ grows larger (we have larger query/key vectors), the gradient which needs to flow through the softmax function during backprop gets blocked due to saturation from the increasing magnitudes of the dot products. This inhibits the gradient from reaching previous layers that need updating, which is a problem we need to address. The issue stems from the fact that the elements of any given $q$ and $v$ can be thought of as independent random variables with a mean of 0 and a variance of 1, so the variance of their dot product will be $d_k$ (you can see this result derived [here](https://ai.stackexchange.com/questions/21237/why-does-this-multiplication-of-q-and-k-have-a-variance-of-d-k-in-scaled)). To bring these score values back to a reasonable range (back to mean 0 and variance of 1), we can simply normalize the score values by dividing by the standard deviation $\sqrt{d_k}$ to get values that don’t cause saturation of the softmax function. This gives us the final form of ***scaled dot-product self-attention***:
 
@@ -122,7 +119,7 @@ With our attention matrix, we can compute our mixtures of values. Once we obtain
 
 ![Multiplying our attention tensor with our value tensor to obtain our value mixtures, unstacking our heads into full sized vectors, and projecting those vectors into embedding space with W_O. “emb size” here is the same size as our query/key size](content/attention-value-product.png)
 
-Multiplying our attention tensor with our value tensor to obtain our value mixtures, unstacking our heads into full sized vectors, and projecting those vectors into embedding space with W_O. “emb size” here is the same size as our query/key size
+Multiplying our attention tensor with our value tensor to obtain our value mixtures, unstacking our heads into full sized vectors, and projecting those vectors into embedding space with $W_{O}$. “emb size” here is the same size as our query/key size
 
 And finally, we obtain a new set of vectors composed of differing amounts of each independent subspace from every vector in the input sequence.
 
@@ -208,29 +205,29 @@ Now that our parameters are defined, we can outline the forward pass for the sel
 
 ```python
 def forward(self, x):
-		# step 0) size: (b_s, s_l, e_s)
-		batch_size, seq_len, emb_size = x.size()
-		head_dim = emb_size // self.num_heads
-		
-		# step 1) size: (b_s, s_l, e_s) -> (b_s, s_l, n_h, h_d)
-		Q = self.W_Q(x).reshape(batch_size, seq_len, self.num_heads, head_dim)
-		K = self.W_K(x).reshape(batch_size, seq_len, self.num_heads, head_dim)
-		V = self.W_V(x).reshape(batch_size, seq_len, self.num_heads, head_dim)
-		
-		# step 2) size: (b_s, s_l, n_h, h_d) -> (b_s, n_h, s_l, h_d)
-		Q = Q.transpose(1, 2)
-		K = K.transpose(1, 2)
-		V = V.transpose(1, 2)
+    # step 0) size: (b_s, s_l, e_s)
+    batch_size, seq_len, emb_size = x.size()
+    head_dim = emb_size // self.num_heads
+
+    # step 1) size: (b_s, s_l, e_s) -> (b_s, s_l, n_h, h_d)
+    Q = self.W_Q(x).reshape(batch_size, seq_len, self.num_heads, head_dim)
+    K = self.W_K(x).reshape(batch_size, seq_len, self.num_heads, head_dim)
+    V = self.W_V(x).reshape(batch_size, seq_len, self.num_heads, head_dim)
+
+    # step 2) size: (b_s, s_l, n_h, h_d) -> (b_s, n_h, s_l, h_d)
+    Q = Q.transpose(1, 2)
+    K = K.transpose(1, 2)
+    V = V.transpose(1, 2)
 ```
 
 Once we’ve gotten our tensors all reshaped and ready to go, we can compute our scaled attention scores by multiplying our query tensor by our key tensor (and scaling by $\frac{1}{\sqrt{d_{head}}}$ since that’s the size of the vectors we’re taking dot products of). We first transpose our key tensor so that the query-key dot products result in a set of `sequence length` by `sequence length` shaped matrices of attention scores for each attention head. After our scores are calculated, we apply our mask by setting all the score values that correspond with a $0$ in the mask matrix to $- \infty$. This will ensure that when the softmax operation is applied, those elements will be set to $0$ and not allow their corresponding value vectors to contribute to the expected value. Since this matrix is a tensor of rank 2, PyTorch will broadcast it across both the head *and* batch dimensions to mask all the score matrices in parallel.
 
 ```python
-# step 3) size: (b_s, n_h, s_l, h_d) x (b_s, n_h, h_d, s_l) = (b_s, n_h, s_l, s_l)
-scores = Q @ K.transpose(-2, -1) * (1.0 / math.sqrt(head_dim))
+    # step 3) size: (b_s, n_h, s_l, h_d) x (b_s, n_h, h_d, s_l) = (b_s, n_h, s_l, s_l)
+    scores = Q @ K.transpose(-2, -1) * (1.0 / math.sqrt(head_dim))
 
-# step 4) mask score values occuring ahead of a given element's seq position
-scores = scores.masked_fill(self.mask[:seq_len, :seq_len]==0, float('-inf'))
+    # step 4) mask score values occuring ahead of a given element's seq position
+    scores = scores.masked_fill(self.mask[:seq_len, :seq_len]==0, float('-inf'))
 ```
 
 We can now apply softmax *row-wise* across every head. This will give us a probability distribution over the values for every query of every attention head.
@@ -238,25 +235,25 @@ We can now apply softmax *row-wise* across every head. This will give us a proba
 Again following the GPT-2 paper, we apply dropout to our attention matrices to prevent our model from overfitting. We can now multiply our attention tensor by our value tensor to obtain a tensor containing our mixture of values for each query. 
 
 ```python
-# step 5) row-wise softmax (prob. dist. over values for every query)
-attn = F.softmax(scores, dim=-1)
-attn = self.attn_dropout(attn)
+    # step 5) row-wise softmax (prob. dist. over values for every query)
+    attn = F.softmax(scores, dim=-1)
+    attn = self.attn_dropout(attn)
 
-# step 6) size: (b_s, n_h, s_l, s_l) x (b_s, n_h, s_l, h_d) = (b_s, n_h, s_l, h_d)
-out = attn @ V
+    # step 6) size: (b_s, n_h, s_l, s_l) x (b_s, n_h, s_l, h_d) = (b_s, n_h, s_l, h_d)
+    out = attn @ V
 ```
 
 With the results computed for each head, we can now unravel our tensor and reassemble a sequence with full sized vectors. After concatenating our attention heads to form a full sized vector, we must linearly project the new vectors back into the embedding space with $W_O$ (which we’re calling `res_proj`).  Following the GPT-2 paper once more, we apply dropout after projecting into embedding space.
 
 ```python
-# step 7) size: (b_s, n_h, s_l, h_d) -> (b_s, s_l, e_s)
-out = out.transpose(1, 2).reshape(batch_size, seq_len, emb_size)
+    # step 7) size: (b_s, n_h, s_l, h_d) -> (b_s, s_l, e_s)
+    out = out.transpose(1, 2).reshape(batch_size, seq_len, emb_size)
 
-# step 8) project concatentated heads into embedding space
-out = self.res_proj(out)
-out = self.res_dropout(out)
+    # step 8) project concatentated heads into embedding space
+    out = self.res_proj(out)
+    out = self.res_dropout(out)
 
-return out
+    return out
 ```
 
 ### Multilayer-Perceptron
@@ -298,11 +295,11 @@ class TransformerBlock(nn.Module):
 We employ residual connections after both the self-attention and MLP layers to ensure gradients can flow easily to early layers of the network during back-propagation, and we employ LayerNorm prior to self-attention and MLP layers to ensure our vectors are normal (again to help avoid gradient issues due to saturation on non-linear layers).
 
 ```python
-def forward(self, x):
-    x = x + self.attn(self.ln1(x))
-    x = x + self.mlp(self.ln2(x))
+    def forward(self, x):
+        x = x + self.attn(self.ln1(x))
+        x = x + self.mlp(self.ln2(x))
 
-    return x
+        return x
 ```
 
 ### The Full GPT Model
@@ -348,7 +345,7 @@ def forward(self, x):
     return out
 ```
 
-To ensure that the magnitudes of our weight values are an appropriate size after initialization, we can initialize them to be normal with a small standard deviation (GPT-2 used 0.2).
+To ensure that the magnitudes of our weight values are an appropriate size after initialization, we can initialize them to be normal with a small standard deviation (GPT-2 used 0.02).
 
 ```python
 def _init_weights(self, module):
